@@ -1,0 +1,10 @@
+# config/services.yaml
+
+parameters:
+
+services:
+    App\Command\AirQualityCommand:
+        arguments:
+            $httpClient: '@http_client'
+        tags:
+            - { name: 'console.command', command: 'air-quality' }
