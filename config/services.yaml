@@ -8,3 +8,11 @@ services:
             $httpClient: '@http_client'
         tags:
             - { name: 'console.command', command: 'air-quality' }
+            
+    app.logger.air_quality:
+        class: Symfony\Component\HttpKernel\Log\Logger
+        arguments:
+            - '@logger'
+        tags:
+            - { name: 'monolog.logger', channel: 'air_quality' }
+

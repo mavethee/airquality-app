@@ -21,18 +21,39 @@ composer install
 ```
 
 ## Usage
+
+Navigate to the cloned repository:
+
 ```sh
-# Navigate to the cloned repository
 cd airquality-app
 ```
 
-# Run the application to check air quality for a specific city (replace [city name] with the desired city)
+Run the application to check air quality for a specific city (replace `(city name)` with the desired city):
 
+```sh
+php bin/console air-quality (city name)
+```
 
 For example, to check air quality in London:
+
 ```sh
 php bin/console air-quality london
 ```
 
+You can also include the `--history` option to retrieve historical air quality data (replace `(city name)` with the desired city):
 
+```sh
+php bin/console air-quality --history (city name)
+```
 
+For example, to retrieve air quality data for London saved locally in JSON file:
+
+```sh
+php bin/console air-quality --history london
+```
+
+## Note:
+
+After switching from trial to free plan, it's not working as intended when comes to checking Air Quality for the next day, that's to fix for later.
+
+**API key is part of the source code as this is a sample project, never do that in case of important projects**

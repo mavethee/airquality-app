@@ -11,6 +11,7 @@ use Symfony\Component\Process\Process;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
+use Psr\Log\LoggerInterface; // Import the LoggerInterface
 
 #[AsCommand(
     name: 'air-quality',
@@ -20,11 +21,13 @@ class AirQualityCommand extends Command
 {
     private $httpClient;
     private $historyFile = 'history.json';
+    private $logger;
 
-    public function __construct(HttpClientInterface $httpClient)
+    public function __construct(HttpClientInterface $httpClient, LoggerInterface $logger = null)
     {
         parent::__construct();
         $this->httpClient = $httpClient;
+        $this->logger = $logger; // Inject the logger
     }
 
     protected function configure(): void
@@ -62,24 +65,32 @@ class AirQualityCommand extends Command
         $location = $input->getArgument('location');
         $currentUrl = sprintf('%s?key=%s&q=%s&aqi=yes', 'https://api.weatherapi.com/v1/current.json', $weatherApiKey, $location);
 
-        // Calculate tomorrow's date at the same hour as now
-        $currentHour = date('H');
-        $tomorrowSameHour = date('Y-m-d H:i:s', strtotime("+1 day $currentHour:00:00"));
-
-        // Build the URL for future air quality data
-        $futureUrl = sprintf(
-            '%s?key=%s&q=%s&dt=%s&aqi=yes',
-            'https://api.weatherapi.com/v1/forecast.json',
-            $weatherApiKey,
-            $location,
-            $tomorrowSameHour
-        );
+        // Log the API request URL
+        if ($this->logger) {
+            $this->logger->info('API Request URL for current air quality: ' . $currentUrl);
+        }
 
         // Fetch and display current air quality data
-        $currentResponse = $this->httpClient->request('GET', $currentUrl);
+        try {
+            $currentResponse = $this->httpClient->request('GET', $currentUrl);
+        } catch (\Exception $e) {
+            if ($this->logger) {
+                $this->logger->error('Failed to make API request for current air quality: ' . $e->getMessage());
+            }
+            $output->writeln('Failed to retrieve current air quality data.');
+            return Command::FAILURE;
+        }
+
+        // Log the API response content
+        if ($this->logger) {
+            $this->logger->info('API Response Content for current air quality: ' . $currentResponse->getContent(false));
+        }
 
         if ($currentResponse->getStatusCode() !== 200) {
-            $output->writeln('Failed to retrieve current air quality data. Please check the location and try again.');
+            if ($this->logger) {
+                $this->logger->error('Failed to retrieve current air quality data. HTTP Status Code: ' . $currentResponse->getStatusCode());
+            }
+            $output->writeln('Failed to retrieve current air quality data. HTTP Status Code: ' . $currentResponse->getStatusCode());
             return Command::FAILURE;
         }
 
@@ -114,24 +125,48 @@ class AirQualityCommand extends Command
 
         $output->writeln("<fg={$currentColor}>{$currentEmoji} Current Air Quality (PM2.5) for today: " . ($currentEmoji ? $currentPm25Index : 'Data not available') . "</>");
 
+        // Build the URL for future air quality data
+        $futureUrl = sprintf(
+            '%s?key=%s&q=%s&dt=tomorrow&aqi=yes',
+            'https://api.weatherapi.com/v1/forecast.json',
+            $weatherApiKey,
+            $location
+        );
+
+        // Log the API request URL for future air quality
+        if ($this->logger) {
+            $this->logger->info('API Request URL for future air quality: ' . $futureUrl);
+        }
+
         // Fetch and display future air quality data
-        $futureResponse = $this->httpClient->request('GET', $futureUrl);
+        try {
+            $futureResponse = $this->httpClient->request('GET', $futureUrl);
+        } catch (\Exception $e) {
+            if ($this->logger) {
+                $this->logger->error('Failed to make API request for future air quality: ' . $e->getMessage());
+            }
+            $output->writeln('Failed to retrieve future air quality data.');
+            return Command::FAILURE;
+        }
 
         if ($futureResponse->getStatusCode() !== 200) {
+            if ($this->logger) {
+                $this->logger->error('Failed to retrieve future air quality data. HTTP Status Code: ' . $futureResponse->getStatusCode());
+            }
             $output->writeln('Failed to retrieve future air quality data.');
-            return Command::SUCCESS;
+            return Command::FAILURE;
         }
 
         $futureData = $futureResponse->toArray();
 
-        if (!isset($futureData['forecast']['forecastday'][0]['hour'][0]['air_quality']['pm2_5'])) {
+        // Check if the 'forecast' key exists and access the future air quality data
+        if (isset($futureData['forecast']['forecastday'][0]['hour'][0]['air_quality']['pm2_5'])) {
+            $futurePm25Index = (float) $futureData['forecast']['forecastday'][0]['hour'][0]['air_quality']['pm2_5'];
+
+            $output->writeln("<fg={$currentColor}>{$currentEmoji} Future Air Quality (PM2.5) for tomorrow (in next 24h): " . ($currentEmoji ? $futurePm25Index : 'Data not available') . "</>");
+        } else {
             $output->writeln('Future air quality data is not available for the specified location.');
-            return Command::SUCCESS;
         }
-
-        $futurePm25Index = (float) $futureData['forecast']['forecastday'][0]['hour'][0]['air_quality']['pm2_5'];
-
-        $output->writeln("<fg={$currentColor}>{$currentEmoji} Future Air Quality (PM2.5), for tomorrow (in next 24h): " . ($currentEmoji ? $futurePm25Index : 'Data not available') . "</>");
 
         // Log historical air quality data
         $this->logHistoricalData($location, $currentPm25Index);
